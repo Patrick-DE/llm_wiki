@@ -101,6 +101,27 @@ async function mineruHeaders(token: string): Promise<HeadersInit> {
   }
 }
 
+function localMineruHeaders(token: string | undefined): HeadersInit | undefined {
+  const value = token?.trim()
+  return value ? { Authorization: `Bearer ${value}` } : undefined
+}
+
+type TauriRequestInit = RequestInit & { maxRedirections?: number }
+
+function localMineruRequestInit(
+  token: string | undefined,
+  init: RequestInit = {},
+): TauriRequestInit {
+  return {
+    ...init,
+    headers: localMineruHeaders(token),
+    // plugin-http uses maxRedirections while browser fetch uses redirect.
+    // Set both so credentials never follow an untrusted service redirect.
+    redirect: "manual",
+    maxRedirections: 0,
+  }
+}
+
 function mineruApiErrorMessage(code: number | string | undefined, msg?: string): string {
   const key = String(code ?? "")
   const known: Record<string, string> = {
@@ -652,6 +673,23 @@ async function downloadAndExtractMarkdown(
 
 // ── Local backend ──
 
+const MINERU_3_0_TO_3_2_BACKENDS: Partial<
+  Record<NonNullable<MineruConfig["localBackend"]>, string>
+> = {
+  "vlm-engine": "vlm-auto-engine",
+  "hybrid-engine": "hybrid-auto-engine",
+}
+
+function localMineruBackendForVersion(
+  backend: NonNullable<MineruConfig["localBackend"]>,
+  version: unknown,
+): string {
+  if (typeof version === "string" && /^3\.[0-2](?:\.|$)/.test(version.trim())) {
+    return MINERU_3_0_TO_3_2_BACKENDS[backend] ?? backend
+  }
+  return backend
+}
+
 /**
  * Parse a document through the official `mineru-api` asynchronous protocol.
  * Files are submitted as multipart/form-data to `/tasks`; the task status and
@@ -667,7 +705,8 @@ async function parseWithLocalMineru(
 ): Promise<MineruExtractedMarkdown> {
   const httpFetch = await getHttpFetch()
   const apiBase = localMineruApiBase(config.localEndpoint)
-  if (config.localBackend?.endsWith("http-client") && !config.localServerUrl?.trim()) {
+  const configuredBackend = config.localBackend || "hybrid-engine"
+  if (configuredBackend.endsWith("http-client") && !config.localServerUrl?.trim()) {
     throw new Error("MinerU HTTP client backends require a model server URL")
   }
   const fileSize = await getFileSize(sourcePath)
@@ -675,6 +714,22 @@ async function parseWithLocalMineru(
     throw new Error("MinerU accurate parsing supports files up to 200 MB")
   }
   throwIfAborted(signal)
+  let serverVersion: unknown
+  if (configuredBackend.endsWith("-engine")) {
+    try {
+      const healthRes = await httpFetch(
+        `${apiBase}/health`,
+        localMineruRequestInit(config.localToken, { signal }),
+      )
+      if (healthRes.ok) {
+        const health = await healthRes.json() as { version?: unknown }
+        serverVersion = health.version
+      }
+    } catch (err) {
+      if (signal?.aborted) throw err
+    }
+  }
+  const localBackend = localMineruBackendForVersion(configuredBackend, serverVersion)
   const { base64 } = await readFileAsBase64(sourcePath)
   const bytes = decodeBase64ToBytes(base64)
   const fileBuffer = bytes.buffer.slice(
@@ -684,7 +739,7 @@ async function parseWithLocalMineru(
   const form = new FormData()
   form.append("files", new Blob([fileBuffer], { type: "application/pdf" }), fileName)
   form.append("lang_list", config.localLanguage || "ch")
-  form.append("backend", config.localBackend || "hybrid-engine")
+  form.append("backend", localBackend)
   form.append("effort", config.localEffort || "medium")
   form.append("parse_method", config.localParseMethod || "auto")
   form.append("formula_enable", String(config.localFormulaEnabled !== false))
@@ -696,11 +751,11 @@ async function parseWithLocalMineru(
   if (config.localServerUrl?.trim()) form.append("server_url", config.localServerUrl.trim())
 
   onProgress?.("Uploading to local MinerU...")
-  const submitRes = await httpFetch(`${apiBase}/tasks`, {
+  const submitRes = await httpFetch(`${apiBase}/tasks`, localMineruRequestInit(config.localToken, {
     method: "POST",
     signal,
     body: form,
-  })
+  }))
   if (!submitRes.ok) {
     const text = await submitRes.text().catch(() => "")
     throw new Error(`Local MinerU submit failed: HTTP ${submitRes.status}: ${text}`)
@@ -721,7 +776,9 @@ async function parseWithLocalMineru(
   while (Date.now() - start < LOCAL_POLL_TIMEOUT_MS) {
     throwIfAborted(signal)
 
-    const statusRes = await httpFetch(statusUrl, { signal })
+    const statusRes = await httpFetch(statusUrl, localMineruRequestInit(config.localToken, {
+      signal,
+    }))
     if (!statusRes.ok) {
       throw new Error(`Local MinerU status check failed: HTTP ${statusRes.status}`)
     }
@@ -729,7 +786,9 @@ async function parseWithLocalMineru(
 
     if (status.status === "completed") {
       onProgress?.("Downloading parsed result...")
-      const resultRes = await httpFetch(resultUrl, { signal })
+      const resultRes = await httpFetch(resultUrl, localMineruRequestInit(config.localToken, {
+        signal,
+      }))
       if (!resultRes.ok) {
         throw new Error(`Local MinerU download failed: HTTP ${resultRes.status}`)
       }
@@ -886,16 +945,19 @@ export async function parseWithMineruResult(
  * Test MinerU connectivity.
  *
  * Cloud backend: submits a minimal task to validate the token.
- * Local backend: checks the local service health endpoint (no token needed).
+ * Local backend: checks the local service health endpoint with its optional token.
  */
 export async function testMineruConnection(
   token: string,
-  config?: Pick<MineruConfig, "backend" | "localEndpoint">,
+  config?: Pick<MineruConfig, "backend" | "localEndpoint" | "localToken">,
 ): Promise<void> {
   const httpFetch = await getHttpFetch()
 
   if (config?.backend === "local") {
-    const res = await httpFetch(`${localMineruApiBase(config.localEndpoint)}/health`)
+    const res = await httpFetch(
+      `${localMineruApiBase(config.localEndpoint)}/health`,
+      localMineruRequestInit(config.localToken),
+    )
     if (!res.ok) {
       const text = await res.text().catch(() => "")
       throw new Error(`Local MinerU service unavailable: HTTP ${res.status}: ${text}`)

@@ -66,6 +66,7 @@ async fn agent_start_turn(
     app: tauri::AppHandle,
     project_id: String,
     mut request: agent::AgentChatRequest,
+    llm_config: Option<agent::provider::LlmConfig>,
 ) -> Result<agent::types::AgentChatResponse, String> {
     let project = resolve_agent_project(&app, &project_id)?;
     if request
@@ -101,7 +102,8 @@ async fn agent_start_turn(
                 .collect();
         }
     }
-    let runtime_config = load_agent_runtime_config(&app);
+    let mut runtime_config = load_agent_runtime_config(&app);
+    runtime_config.llm = llm_config.or(runtime_config.llm);
     let runtime = agent::AgentRuntime::new(
         project.id.clone(),
         project.path.clone(),
@@ -152,6 +154,7 @@ async fn agent_start_turn_stream(
     app: tauri::AppHandle,
     project_id: String,
     mut request: agent::AgentChatRequest,
+    llm_config: Option<agent::provider::LlmConfig>,
 ) -> Result<String, String> {
     let project = resolve_agent_project(&app, &project_id)?;
     if request
@@ -185,7 +188,8 @@ async fn agent_start_turn_stream(
             })
             .collect();
     }
-    let runtime_config = load_agent_runtime_config(&app);
+    let mut runtime_config = load_agent_runtime_config(&app);
+    runtime_config.llm = llm_config.or(runtime_config.llm);
     let runtime = agent::AgentRuntime::new(
         project.id.clone(),
         project.path.clone(),
@@ -626,6 +630,10 @@ pub fn run() {
             commands::fs::create_missing_wiki_page,
             commands::file_history::list_file_history,
             commands::file_history::restore_file_history,
+            commands::file_history::get_file_history_stats,
+            commands::file_history::get_file_history_settings,
+            commands::file_history::set_file_history_settings,
+            commands::file_history::clear_file_history,
             commands::fs::list_directory,
             commands::fs::copy_file,
             commands::fs::copy_directory,
@@ -762,13 +770,20 @@ pub fn run() {
 
 #[cfg(target_os = "linux")]
 fn apply_linux_webkit_compat_env() {
-    // WebKitGTK can crash during startup on some Wayland compositors
-    // (reported on Fedora 44) unless compositing mode is disabled before
-    // the WebView is created. Keep this as a Linux-only default and do not
-    // override an explicit user setting so advanced users and packagers can
-    // opt back into the platform default if their stack supports it.
+    // WebKitGTK can crash or withdraw its window on some Wayland/XWayland
+    // stacks unless accelerated render paths are disabled before the WebView
+    // is created. Keep these as Linux-only defaults and do not override an
+    // explicit user setting so advanced users and packagers can opt back into
+    // the platform default if their stack supports it.
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    }
+    // Some WebKitGTK/Mesa combinations still attempt the DMA-BUF renderer
+    // even with accelerated compositing disabled. In an AppImage running
+    // through XWayland that can withdraw the native window while leaving the
+    // web and network processes alive. Respect explicit packager overrides.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 }
 

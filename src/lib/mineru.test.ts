@@ -366,6 +366,7 @@ describe("parseWithMineru", () => {
       enabled: true,
       backend: "local",
       localEndpoint: "http://localhost:9000/custom/",
+      localToken: "local-secret",
       localBackend: "pipeline",
       token: "",
       modelVersion: "pipeline",
@@ -378,6 +379,35 @@ describe("parseWithMineru", () => {
     expect(mockHttpFetch.mock.calls[0]?.[0]).toBe("http://localhost:9000/custom/tasks")
     expect(mockHttpFetch.mock.calls[1]?.[0]).toContain("/tasks/task%2F1")
     expect(mockHttpFetch.mock.calls[2]?.[0]).toContain("/tasks/task%2F1/result")
+    for (const call of mockHttpFetch.mock.calls) {
+      expect(call[1]?.headers).toEqual({ Authorization: "Bearer local-secret" })
+      expect(call[1]).toMatchObject({ redirect: "manual", maxRedirections: 0 })
+    }
+  })
+
+  it.each([
+    ["2.1.11", "hybrid-engine"],
+    ["3.1.15", "hybrid-auto-engine"],
+    ["3.4.4", "hybrid-engine"],
+  ])("submits the backend name supported by MinerU %s", async (version, expectedBackend) => {
+    mockHttpFetch
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy", version }))
+      .mockResolvedValueOnce(jsonResponse({ task_id: "task-1" }, { status: 202 }))
+      .mockResolvedValueOnce(jsonResponse({ status: "completed" }))
+      .mockResolvedValueOnce(jsonResponse({
+        results: { report: { md_content: "# Parsed locally" } },
+      }))
+
+    await expect(parseWithMineru({
+      enabled: true,
+      backend: "local",
+      localBackend: "hybrid-engine",
+      token: "",
+      modelVersion: "vlm",
+    }, "/tmp/report.pdf")).resolves.toBe("# Parsed locally")
+
+    const form = mockHttpFetch.mock.calls[1]?.[1]?.body as FormData
+    expect(form.get("backend")).toBe(expectedBackend)
   })
 
   it("rejects oversized local-backend files before reading or uploading", async () => {
@@ -396,6 +426,7 @@ describe("parseWithMineru", () => {
 
   it("rejects an empty local-backend result instead of caching it as success", async () => {
     mockHttpFetch
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy", version: "3.1.15" }))
       .mockResolvedValueOnce(jsonResponse({ task_id: "task-1" }, { status: 202 }))
       .mockResolvedValueOnce(jsonResponse({ status: "completed" }))
       .mockResolvedValueOnce(jsonResponse({ results: { doc: { md_content: "  " } } }))
@@ -410,6 +441,7 @@ describe("parseWithMineru", () => {
 
   it("saves and rewrites images returned by the official local API", async () => {
     mockHttpFetch
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy", version: "3.1.15" }))
       .mockResolvedValueOnce(jsonResponse({ task_id: "task-1" }, { status: 202 }))
       .mockResolvedValueOnce(jsonResponse({ status: "completed" }))
       .mockResolvedValueOnce(jsonResponse({
@@ -438,12 +470,13 @@ describe("parseWithMineru", () => {
       "/project/wiki/media/doc/mineru/images/image-1.png",
       btoa("image bytes"),
     )
-    const form = mockHttpFetch.mock.calls[0]?.[1]?.body as FormData
+    const form = mockHttpFetch.mock.calls[1]?.[1]?.body as FormData
     expect(form.get("return_images")).toBe("true")
   })
 
   it("uses the data URI MIME type when the MinerU filename extension disagrees", async () => {
     mockHttpFetch
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy", version: "3.1.15" }))
       .mockResolvedValueOnce(jsonResponse({ task_id: "task-1" }, { status: 202 }))
       .mockResolvedValueOnce(jsonResponse({ status: "completed" }))
       .mockResolvedValueOnce(jsonResponse({
@@ -789,9 +822,17 @@ describe("testMineruConnection", () => {
   it("checks local health without requiring a cloud token", async () => {
     mockHttpFetch.mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
 
-    await expect(testMineruConnection("", { backend: "local" })).resolves.toBeUndefined()
+    await expect(testMineruConnection("", {
+      backend: "local",
+      localToken: "health-secret",
+    })).resolves.toBeUndefined()
     expect(mockHttpFetch).toHaveBeenCalledWith(
       "http://127.0.0.1:8000/health",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer health-secret" },
+        redirect: "manual",
+        maxRedirections: 0,
+      }),
     )
   })
 
