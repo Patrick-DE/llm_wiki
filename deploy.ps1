@@ -1,5 +1,6 @@
 param(
     [string]$Thumbprint = "FD10E795F1DC5045FA8448C6C8E99C59B127635F",
+    [string]$TargetTriple = "",
     [switch]$SkipBuild
 )
 
@@ -12,7 +13,11 @@ Write-Host "========================================" -ForegroundColor Cyan
 # 1. Build the Tauri application
 if (-not $SkipBuild) {
     Write-Host "`n[1/2] Building Tauri application (npm run tauri build)..." -ForegroundColor Yellow
-    npm run tauri build
+    if ($TargetTriple) {
+        npm run tauri build -- --target $TargetTriple
+    } else {
+        npm run tauri build
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Build failed with exit code $LASTEXITCODE"
         exit $LASTEXITCODE
@@ -24,7 +29,7 @@ if (-not $SkipBuild) {
 
 # 2. Invoke sign.ps1 to copy and sign binaries into /dist
 Write-Host "`n[2/2] Signing binaries and packaging into /dist..." -ForegroundColor Yellow
-& ".\sign.ps1" -Thumbprint $Thumbprint
+& ".\sign.ps1" -Thumbprint $Thumbprint -TargetTriple $TargetTriple
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nDeployment completed successfully! Signed artifacts are in /dist" -ForegroundColor Green

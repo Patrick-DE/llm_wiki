@@ -1,9 +1,18 @@
 param(
-    [string]$Thumbprint = "FD10E795F1DC5045FA8448C6C8E99C59B127635F"
+    [string]$Thumbprint = "FD10E795F1DC5045FA8448C6C8E99C59B127635F",
+    [string]$TargetTriple = ""
 )
 
+# Cargo writes to target\release for the host triple, but target\<triple>\release
+# when the build was invoked with an explicit --target.
+$releaseDir = if ($TargetTriple) {
+    "src-tauri\target\$TargetTriple\release"
+} else {
+    "src-tauri\target\release"
+}
+
 # 1. Locate signtool.exe (hardcoded default with automatic SDK fallback)
-$signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
+$signtool = "C:\Users\N4021286\repos\signtool.exe"
 if (-Not (Test-Path $signtool)) {
     $found = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
     if ($found) {
@@ -19,7 +28,7 @@ if (-Not (Test-Path $signtool)) {
     }
 }
 
-$sourceExe = "src-tauri\target\release\llm-wiki.exe"
+$sourceExe = Join-Path $releaseDir "llm-wiki.exe"
 $distDir = "dist"
 $targetExe = Join-Path $distDir "llm-wiki.exe"
 
@@ -39,8 +48,17 @@ if (-Not (Test-Path $distDir)) {
 Write-Host "Copying binary to $targetExe..."
 Copy-Item -Path $sourceExe -Destination $targetExe -Force
 
+# 4b. Copy WebView2Loader.dll next to the standalone binary if the build needs it.
+# MSVC builds link the loader statically; MinGW builds import it from the DLL,
+# so the standalone exe will not start without this file beside it.
+$loaderDll = Join-Path $releaseDir "WebView2Loader.dll"
+if (Test-Path $loaderDll) {
+    Write-Host "Copying WebView2Loader.dll to $distDir..."
+    Copy-Item -Path $loaderDll -Destination (Join-Path $distDir "WebView2Loader.dll") -Force
+}
+
 # 5. Copy NSIS installer to /dist if present
-$nsisSetup = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+$nsisSetup = Get-ChildItem (Join-Path $releaseDir "bundle\nsis\*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($nsisSetup) {
     $targetSetup = Join-Path $distDir $nsisSetup.Name
     Write-Host "Copying NSIS setup to $targetSetup..."
