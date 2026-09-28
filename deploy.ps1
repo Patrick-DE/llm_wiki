@@ -12,6 +12,11 @@ Write-Host "========================================" -ForegroundColor Cyan
 
 # 1. Build the Tauri application
 if (-not $SkipBuild) {
+    if (-not $env:CARGO_BUILD_JOBS) {
+        $env:CARGO_BUILD_JOBS = "4"
+    }
+    Remove-Item -Path "src-tauri\target\release\deps\*.rcgu.o" -Force -ErrorAction SilentlyContinue
+
     Write-Host "`n[1/2] Building Tauri application (npm run tauri build)..." -ForegroundColor Yellow
     if ($TargetTriple) {
         npm run tauri build -- --target $TargetTriple
