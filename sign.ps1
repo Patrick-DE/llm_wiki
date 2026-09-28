@@ -1,6 +1,7 @@
 param(
     [string]$Thumbprint = "FD10E795F1DC5045FA8448C6C8E99C59B127635F",
-    [string]$TargetTriple = ""
+    [string]$TargetTriple = "",
+    [switch]$SkipSign
 )
 
 # Cargo writes to target\release for the host triple, but target\<triple>\release
@@ -12,7 +13,7 @@ $releaseDir = if ($TargetTriple) {
 }
 
 # 1. Locate signtool.exe (hardcoded default with automatic SDK fallback)
-$signtool = "C:\Users\N4021286\repos\signtool.exe"
+$signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
 if (-Not (Test-Path $signtool)) {
     $found = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
     if ($found) {
@@ -49,32 +50,22 @@ Write-Host "Copying binary to $targetExe..."
 Copy-Item -Path $sourceExe -Destination $targetExe -Force
 
 # 4b. Copy WebView2Loader.dll next to the standalone binary if the build needs it.
-# MSVC builds link the loader statically; MinGW builds import it from the DLL,
-# so the standalone exe will not start without this file beside it.
 $loaderDll = Join-Path $releaseDir "WebView2Loader.dll"
 if (Test-Path $loaderDll) {
     Write-Host "Copying WebView2Loader.dll to $distDir..."
     Copy-Item -Path $loaderDll -Destination (Join-Path $distDir "WebView2Loader.dll") -Force
 }
 
-# 5. Copy NSIS installer to /dist if present
-$nsisSetup = Get-ChildItem (Join-Path $releaseDir "bundle\nsis\*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($nsisSetup) {
-    $targetSetup = Join-Path $distDir $nsisSetup.Name
-    Write-Host "Copying NSIS setup to $targetSetup..."
-    Copy-Item -Path $nsisSetup.FullName -Destination $targetSetup -Force
-}
-
-# 6. Sign all executables in /dist
-$filesToSign = Get-ChildItem -Path $distDir -Filter "*.exe"
-
-foreach ($file in $filesToSign) {
-    Write-Host "Signing $($file.Name) using Certum (time.certum.pl) timestamp server..."
-    & $signtool sign /sha1 $Thumbprint /tr http://time.certum.pl/ /td sha512 /fd sha512 $file.FullName
+# 5. Sign standalone binary in /dist
+if (-not $SkipSign) {
+    Write-Host "Signing $targetExe using Certum (time.certum.pl) timestamp server..."
+    & $signtool sign /sha1 $Thumbprint /tr http://time.certum.pl/ /td sha512 /fd sha512 $targetExe
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to sign $($file.Name)."
+        Write-Error "Failed to sign $targetExe."
         exit $LASTEXITCODE
     }
+    Write-Host "Binary signed and packaged into /$distDir successfully!" -ForegroundColor Green
+} else {
+    Write-Host "Signing skipped. Standalone binary ready in $targetExe" -ForegroundColor Yellow
 }
-
-Write-Host "All binaries signed and packaged into /$distDir successfully!"
+exit 0
