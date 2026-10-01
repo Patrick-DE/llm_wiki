@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useWikiStore } from "@/stores/wiki-store"
+import { resolveTaskLlmConfig } from "@/lib/llm-task-routing"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
 import { runDuplicateDetection } from "@/lib/dedup-runner"
 import { addNotDuplicate } from "@/lib/dedup-storage"
@@ -64,8 +65,25 @@ function findTaskForGroup(
 export function MaintenanceSection() {
   const { t } = useTranslation()
   const appDialog = useAppDialog()
-  const llmConfig = useWikiStore((s) => s.llmConfig)
+  const baseLlmConfig = useWikiStore((s) => s.llmConfig)
+  const providerConfigs = useWikiStore((s) => s.providerConfigs)
+  const taskModelRouting = useWikiStore((s) => s.taskModelRouting)
+  const projectLlmOverride = useWikiStore((s) => s.projectLlmOverride)
+  const customLlmPresets = useWikiStore((s) => s.customLlmPresets)
   const project = useWikiStore((s) => s.project)
+
+  const llmConfig = useMemo(
+    () =>
+      resolveTaskLlmConfig(
+        "ingest",
+        baseLlmConfig,
+        providerConfigs,
+        taskModelRouting,
+        projectLlmOverride,
+        customLlmPresets,
+      ),
+    [baseLlmConfig, providerConfigs, taskModelRouting, projectLlmOverride, customLlmPresets],
+  )
 
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)

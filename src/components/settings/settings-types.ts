@@ -1,5 +1,5 @@
 import type { CustomApiMode } from "./llm-presets"
-import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend, MineruModelVersion, MineruParseMethod, ReasoningConfig, SourceWatchConfig } from "@/stores/wiki-store"
+import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend, MineruModelVersion, MineruParseMethod, SourceWatchConfig } from "@/stores/wiki-store"
 
 /**
  * Shape of the draft state each section reads from and writes into.
@@ -8,20 +8,6 @@ import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend,
  * stores + disk in one commit.
  */
 export interface SettingsDraft {
-  // LLM provider
-  provider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax" | "claude-code" | "codex-cli"
-  apiKey: string
-  model: string
-  ollamaUrl: string
-  customEndpoint: string
-  azureApiVersion: string
-  azureModelFamily: AzureModelFamily
-  maxContextSize: number
-  apiMode: CustomApiMode | undefined
-  reasoning: ReasoningConfig | undefined
-  ingestReasoning: ReasoningConfig | undefined
-  localCliIsolation: boolean
-
   // Embedding
   embeddingEnabled: boolean
   embeddingEndpoint: string

@@ -56,6 +56,34 @@ if (Test-Path $loaderDll) {
     Copy-Item -Path $loaderDll -Destination (Join-Path $distDir "WebView2Loader.dll") -Force
 }
 
+# 4c. Copy pdfium.dll next to the standalone binary
+$pdfiumDll = "src-tauri\pdfium\pdfium.dll"
+if (Test-Path $pdfiumDll) {
+    Write-Host "Copying pdfium.dll to $distDir..."
+    Copy-Item -Path $pdfiumDll -Destination (Join-Path $distDir "pdfium.dll") -Force
+}
+
+# 4d. Package mcp-server into /dist
+$mcpSrc = "mcp-server"
+if (Test-Path $mcpSrc) {
+    if (-Not (Test-Path "$mcpSrc\dist\src\index.js")) {
+        Write-Host "Building mcp-server (npm run mcp:build)..."
+        npm run mcp:build
+    }
+    $mcpDist = Join-Path $distDir "mcp-server"
+    if (-Not (Test-Path $mcpDist)) {
+        New-Item -ItemType Directory -Path $mcpDist | Out-Null
+    }
+    Write-Host "Packaging mcp-server into $mcpDist..."
+    Copy-Item -Path "$mcpSrc\package.json" -Destination $mcpDist -Force
+    if (Test-Path "$mcpSrc\dist") {
+        Copy-Item -Path "$mcpSrc\dist" -Destination $mcpDist -Recurse -Force
+    }
+    if (Test-Path "$mcpSrc\node_modules") {
+        Copy-Item -Path "$mcpSrc\node_modules" -Destination $mcpDist -Recurse -Force
+    }
+}
+
 # 5. Sign standalone binary in /dist
 if (-not $SkipSign) {
     Write-Host "Signing $targetExe using Certum (time.certum.pl) timestamp server..."

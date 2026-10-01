@@ -98,7 +98,6 @@ const CATEGORIES: Category[] = [
 ]
 
 function initialDraft(
-  llm: ReturnType<typeof useWikiStore.getState>["llmConfig"],
   embed: ReturnType<typeof useWikiStore.getState>["embeddingConfig"],
   multimodal: ReturnType<typeof useWikiStore.getState>["multimodalConfig"],
   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
@@ -127,18 +126,6 @@ function initialDraft(
   }
 
   return {
-    provider: llm.provider,
-    apiKey: llm.apiKey,
-    model: llm.model,
-    ollamaUrl: llm.ollamaUrl,
-    customEndpoint: llm.customEndpoint,
-    azureApiVersion: llm.azureApiVersion ?? "2024-10-21",
-    azureModelFamily: llm.azureModelFamily ?? "auto",
-    maxContextSize: llm.maxContextSize ?? 204800,
-    apiMode: llm.apiMode,
-    reasoning: llm.reasoning,
-    ingestReasoning: llm.ingestReasoning,
-    localCliIsolation: llm.localCliIsolation === true,
     embeddingEnabled: embed.enabled,
     embeddingEndpoint: embed.endpoint,
     embeddingApiKey: embed.apiKey,
@@ -202,8 +189,6 @@ function initialDraft(
 export function SettingsView() {
   const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
-  const llmConfig = useWikiStore((s) => s.llmConfig)
-  const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
   const embeddingConfig = useWikiStore((s) => s.embeddingConfig)
   const setEmbeddingConfig = useWikiStore((s) => s.setEmbeddingConfig)
   const multimodalConfig = useWikiStore((s) => s.multimodalConfig)
@@ -242,7 +227,6 @@ export function SettingsView() {
   const [currentTheme, setCurrentTheme] = useState<AppTheme>("system")
   const [draft, setDraftState] = useState<SettingsDraft>(() =>
     initialDraft(
-      llmConfig,
       embeddingConfig,
       multimodalConfig,
       outputLanguage,
@@ -310,7 +294,6 @@ export function SettingsView() {
   useEffect(() => {
     setDraftState((prev) =>
       initialDraft(
-        llmConfig,
         embeddingConfig,
         multimodalConfig,
         outputLanguage,
@@ -329,7 +312,6 @@ export function SettingsView() {
       ),
     )
   }, [
-    llmConfig,
     embeddingConfig,
     multimodalConfig,
     outputLanguage,
@@ -356,8 +338,6 @@ export function SettingsView() {
   const handleSave = useCallback(async () => {
     setSaveError(null)
     const {
-      saveLlmConfig,
-      loadLlmConfig,
       saveEmbeddingConfig,
       loadEmbeddingConfig,
       saveMultimodalConfig,
@@ -380,20 +360,6 @@ export function SettingsView() {
       loadZoomLevel,
     } = await import("@/lib/project-store")
 
-    const newLlm = {
-      provider: draft.provider,
-      apiKey: draft.apiKey,
-      model: draft.model,
-      ollamaUrl: draft.ollamaUrl,
-      customEndpoint: draft.customEndpoint,
-      azureApiVersion: draft.provider === "azure" ? draft.azureApiVersion.trim() : undefined,
-      azureModelFamily: draft.provider === "azure" ? draft.azureModelFamily : undefined,
-      maxContextSize: draft.maxContextSize,
-      apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
-      reasoning: draft.reasoning,
-      ingestReasoning: draft.ingestReasoning,
-      localCliIsolation: draft.localCliIsolation,
-    }
     const newEmbed = {
       enabled: draft.embeddingEnabled,
       endpoint: draft.embeddingEndpoint,
@@ -466,7 +432,6 @@ export function SettingsView() {
     // settings draft resync effect runs after store updates; if any config stays
     // stale until later in the save sequence, that resync can briefly restore
     // the old value and make the UI look like saving reverted the user's edit.
-    setLlmConfig(newLlm)
     setEmbeddingConfig(newEmbed)
     setMultimodalConfig(newMultimodal)
     setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
@@ -481,7 +446,6 @@ export function SettingsView() {
     setGeneralConfig(newGeneralConfig)
 
     try {
-      await saveLlmConfig(newLlm)
       await saveEmbeddingConfig(newEmbed)
       await saveMultimodalConfig(newMultimodal)
       await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
@@ -581,7 +545,6 @@ export function SettingsView() {
         result.status === "fulfilled" ? result.value : fallback
       try {
         const [
-          persistedLlm,
           persistedEmbedding,
           persistedMultimodal,
           persistedOutputLanguage,
@@ -594,7 +557,6 @@ export function SettingsView() {
           persistedGeneral,
           persistedZoom,
         ] = await Promise.allSettled([
-          loadLlmConfig(),
           loadEmbeddingConfig(),
           loadMultimodalConfig(),
           loadOutputLanguage(project?.id),
@@ -607,7 +569,6 @@ export function SettingsView() {
           loadGeneralConfig(),
           loadZoomLevel(),
         ] as const)
-        setLlmConfig(resultValue(persistedLlm, null) ?? llmConfig)
         setEmbeddingConfig(resultValue(persistedEmbedding, null) ?? embeddingConfig)
         setMultimodalConfig(resultValue(persistedMultimodal, null) ?? multimodalConfig)
         setOutputLanguage((resultValue(persistedOutputLanguage, null) ?? outputLanguage) as typeof outputLanguage)
@@ -630,7 +591,6 @@ export function SettingsView() {
   }, [
     draft,
     project,
-    llmConfig,
     embeddingConfig,
     multimodalConfig,
     outputLanguage,
@@ -642,7 +602,6 @@ export function SettingsView() {
     apiConfig,
     generalConfig,
     maxHistoryMessages,
-    setLlmConfig,
     setEmbeddingConfig,
     setMultimodalConfig,
     setOutputLanguage,
